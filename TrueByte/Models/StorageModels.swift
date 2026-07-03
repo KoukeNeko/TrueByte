@@ -18,6 +18,7 @@ enum TestPhase: Equatable, Sendable {
     case idle
     case writing
     case verifying
+    case cancelling
     case finished
     case failed
     case cancelled
@@ -27,6 +28,7 @@ enum TestPhase: Equatable, Sendable {
         case .idle: "Ready"
         case .writing: "Writing"
         case .verifying: "Verifying"
+        case .cancelling: "Stopping"
         case .finished: "Finished"
         case .failed: "Failed"
         case .cancelled: "Cancelled"
@@ -45,6 +47,7 @@ enum TestProgressStatus: Sendable {
     case verifyingTestFiles
     case verifyingFile(index: Int, total: Int)
     case verifyingFileName(String)
+    case cancelling
     case success
     case defective
     case cancelled
@@ -73,6 +76,8 @@ enum TestProgressStatus: Sendable {
             strings.verifyingFile(index: index, total: total)
         case .verifyingFileName(let name):
             strings.verifyingFileName(name)
+        case .cancelling:
+            strings.cancelling
         case .success:
             strings.successMessage
         case .defective:

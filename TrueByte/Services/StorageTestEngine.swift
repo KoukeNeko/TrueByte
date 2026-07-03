@@ -205,12 +205,14 @@ struct StorageTestEngine {
             await progressEmitter.emit(progress)
         }
 
+        try Task.checkCancellation()
         progress.isSyncing = true
         progress.statusLine = strings.flushingFileName(plannedFile.url.lastPathComponent)
         progress.status = .flushingFileName(plannedFile.url.lastPathComponent)
         progress.lastActivityAt = Date()
         await progressEmitter.emit(progress, force: true)
         handle.synchronizeFile()
+        try Task.checkCancellation()
         progress.isSyncing = false
         progress.lastActivityAt = Date()
         await progressEmitter.emit(progress, force: true)

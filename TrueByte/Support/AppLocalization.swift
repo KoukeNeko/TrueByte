@@ -250,6 +250,14 @@ struct AppStrings: Sendable {
         }
     }
 
+    var cancelling: String {
+        switch language {
+        case .zhHant: "正在停止"
+        case .en: "Stopping"
+        case .ja: "停止中"
+        }
+    }
+
     var selectTargetStatus: String {
         switch language {
         case .zhHant: "選擇目標"
@@ -558,6 +566,7 @@ struct AppStrings: Sendable {
         case .idle: ready
         case .writing: writing
         case .verifying: verifying
+        case .cancelling: cancelling
         case .finished: finished
         case .failed: failed
         case .cancelled: cancelled

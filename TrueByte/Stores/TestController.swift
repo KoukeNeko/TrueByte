@@ -13,6 +13,7 @@ final class TestController: ObservableObject {
     @Published var logEntries: [TestLogEntry] = []
     @Published var errorMessage: String?
     @Published private(set) var isRunning = false
+    @Published private(set) var isCancelling = false
     @Published private(set) var isClearingTestFiles = false
     @Published var language: AppLanguage = AppLanguage.defaultLanguage {
         didSet {
@@ -28,6 +29,10 @@ final class TestController: ObservableObject {
 
     var isBusy: Bool {
         isRunning || isClearingTestFiles
+    }
+
+    var canCancel: Bool {
+        isRunning && !isCancelling
     }
 
     var canStart: Bool {
@@ -118,6 +123,7 @@ final class TestController: ObservableObject {
             language: language
         )
         isRunning = true
+        isCancelling = false
         currentTask = Task.detached(priority: .userInitiated) { [weak self, configuration] in
             let engine = StorageTestEngine()
             do {
@@ -125,23 +131,26 @@ final class TestController: ObservableObject {
                     await self?.receive(event)
                 }
                 await MainActor.run { [weak self] in
-                    self?.refreshTarget()
+                    guard let self else { return }
+                    if self.isCancelling {
+                        self.finishCancellation()
+                    } else {
+                        self.refreshTarget()
+                    }
                 }
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
                     guard let self else { return }
-                    self.refreshTarget()
-                    self.progress.phase = .cancelled
-                    self.progress.status = .cancelled
-                    self.report.verdict = .cancelled
-                    self.report.message = self.strings.testCancelled
-                    self.report.messageKind = .cancelled
-                    self.progress.statusLine = self.strings.cancelled
-                    self.log(.testCancelled)
+                    self.finishCancellation()
                 }
             } catch {
                 await MainActor.run { [weak self] in
                     guard let self else { return }
+                    if self.isCancelling {
+                        self.finishCancellation()
+                        return
+                    }
+
                     let message = self.strings.message(for: error)
                     let progressStatus = self.progressStatus(for: error, fallbackMessage: message)
                     let reportMessage = self.reportMessage(for: error, fallbackMessage: message)
@@ -161,16 +170,18 @@ final class TestController: ObservableObject {
                 guard let self else { return }
                 self.currentTask = nil
                 self.isRunning = false
+                self.isCancelling = false
             }
         }
     }
 
     func cancel() {
-        guard let currentTask else { return }
+        guard let currentTask, !isCancelling else { return }
         currentTask.cancel()
-        progress.phase = .cancelled
-        progress.status = .cancelled
-        progress.statusLine = strings.cancelled
+        isCancelling = true
+        progress.phase = .cancelling
+        progress.status = .cancelling
+        progress.statusLine = strings.cancelling
     }
 
     func clearTestFiles() {
@@ -235,6 +246,8 @@ final class TestController: ObservableObject {
     }
 
     private func receive(_ event: StorageTestEvent) {
+        guard !isCancelling else { return }
+
         switch event {
         case .progress(let newProgress):
             progress = newProgress
@@ -243,6 +256,17 @@ final class TestController: ObservableObject {
         case .report(let newReport):
             report = newReport
         }
+    }
+
+    private func finishCancellation() {
+        refreshTarget()
+        progress.phase = .cancelled
+        progress.status = .cancelled
+        report.verdict = .cancelled
+        report.message = strings.testCancelled
+        report.messageKind = .cancelled
+        progress.statusLine = strings.cancelled
+        log(.testCancelled)
     }
 
     private func log(_ message: String) {

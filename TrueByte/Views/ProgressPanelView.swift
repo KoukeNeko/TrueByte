@@ -31,8 +31,6 @@ struct ProgressPanelView: View {
             ProgressView(value: controller.progress.fractionCompleted)
                 .progressViewStyle(.linear)
 
-            ActivityNoticeView(notice: activityNotice(now: now))
-
             HStack(spacing: 12) {
                 MetricView(title: strings.written, value: ByteCountFormat.fileSize(controller.progress.writtenBytes))
                 MetricView(title: strings.verified, value: ByteCountFormat.fileSize(controller.progress.verifiedBytes))
@@ -110,52 +108,6 @@ struct ProgressPanelView: View {
         }
     }
 
-    private func activityNotice(now: Date) -> ActivityNotice? {
-        guard isActive else { return nil }
-        let quietSeconds = now.timeIntervalSince(controller.progress.lastActivityAt)
-
-        if controller.progress.isSyncing {
-            let text = quietSeconds > 8
-                ? strings.flushingTakingLonger
-                : strings.flushingFileData
-            return ActivityNotice(text: text, systemImage: "externaldrive.badge.timemachine", color: .secondary)
-        }
-
-        if quietSeconds > 15 {
-            return ActivityNotice(
-                text: strings.noByteProgress(seconds: Int(quietSeconds)),
-                systemImage: "exclamationmark.triangle",
-                color: .orange
-            )
-        }
-
-        return nil
-    }
-}
-
-private struct ActivityNotice {
-    var text: String
-    var systemImage: String
-    var color: Color
-}
-
-private struct ActivityNoticeView: View {
-    var notice: ActivityNotice?
-
-    var body: some View {
-        Label {
-            Text(notice?.text ?? " ")
-                .lineLimit(2)
-        } icon: {
-            Image(systemName: notice?.systemImage ?? "exclamationmark.triangle")
-        }
-        .font(.callout.weight(.medium))
-        .foregroundStyle(notice?.color ?? .secondary)
-        .opacity(notice == nil ? 0 : 1)
-        .frame(height: 40, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityHidden(notice == nil)
-    }
 }
 
 private struct MetricView: View {

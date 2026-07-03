@@ -145,10 +145,14 @@ struct TargetPanelView: View {
                     Button(role: .cancel) {
                         controller.cancel()
                     } label: {
-                        Label(strings.stop, systemImage: "stop.fill")
+                        Label(
+                            controller.isCancelling ? strings.cancelling : strings.stop,
+                            systemImage: controller.isCancelling ? "hourglass" : "stop.fill"
+                        )
                     }
                     .keyboardShortcut(".", modifiers: [.command])
                     .controlSize(.large)
+                    .disabled(!controller.canCancel)
                 } else {
                     Button {
                         controller.start()
