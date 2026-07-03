@@ -12,6 +12,8 @@ final class TestController: ObservableObject {
     @Published var report = TestReport()
     @Published var logEntries: [TestLogEntry] = []
     @Published var errorMessage: String?
+    @Published private(set) var isRunning = false
+    @Published private(set) var isClearingTestFiles = false
     @Published var language: AppLanguage = AppLanguage.defaultLanguage {
         didSet {
             refreshLocalizedStaticText()
@@ -24,12 +26,16 @@ final class TestController: ObservableObject {
         language.strings
     }
 
-    var isRunning: Bool {
-        currentTask != nil
+    var isBusy: Bool {
+        isRunning || isClearingTestFiles
     }
 
     var canStart: Bool {
-        targetInfo != nil && !isRunning
+        targetInfo != nil && !isBusy
+    }
+
+    var canClearTestFiles: Bool {
+        (targetInfo?.h2wFileCount ?? 0) > 0 && !isBusy
     }
 
     var customBytes: UInt64 {
@@ -60,6 +66,8 @@ final class TestController: ObservableObject {
     }
 
     func selectTarget() {
+        guard !isBusy else { return }
+
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -88,17 +96,18 @@ final class TestController: ObservableObject {
             errorMessage = strings.storageError(.noTarget)
             return
         }
-        guard !isRunning else { return }
+        guard !isBusy else { return }
 
         errorMessage = nil
-        report = TestReport(message: strings.noTestHasRun)
+        report = TestReport(message: strings.noTestHasRun, messageKind: .noTestHasRun)
         logEntries.removeAll()
         progress = TestProgress(
             phase: mode == .verifyOnly ? .verifying : .writing,
             totalBytes: initialTotalBytes(for: targetInfo),
             startedAt: Date(),
             lastActivityAt: Date(),
-            statusLine: strings.title(for: mode)
+            statusLine: strings.title(for: mode),
+            status: .mode(mode)
         )
 
         let configuration = TestConfiguration(
@@ -108,6 +117,7 @@ final class TestController: ObservableObject {
             useAllAvailableSpace: useAllAvailableSpace,
             language: language
         )
+        isRunning = true
         currentTask = Task.detached(priority: .userInitiated) { [weak self, configuration] in
             let engine = StorageTestEngine()
             do {
@@ -120,39 +130,51 @@ final class TestController: ObservableObject {
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
                     guard let self else { return }
+                    self.refreshTarget()
                     self.progress.phase = .cancelled
+                    self.progress.status = .cancelled
                     self.report.verdict = .cancelled
                     self.report.message = self.strings.testCancelled
+                    self.report.messageKind = .cancelled
                     self.progress.statusLine = self.strings.cancelled
-                    self.log(self.strings.testCancelled)
+                    self.log(.testCancelled)
                 }
             } catch {
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     let message = self.strings.message(for: error)
+                    let progressStatus = self.progressStatus(for: error, fallbackMessage: message)
+                    let reportMessage = self.reportMessage(for: error, fallbackMessage: message)
+                    let logMessage = self.logMessage(for: error, fallbackMessage: message)
+                    self.refreshTarget()
                     self.progress.phase = .failed
+                    self.progress.status = progressStatus
                     self.progress.statusLine = message
                     self.errorMessage = message
                     self.report.verdict = .failed
                     self.report.message = message
-                    self.log(message)
+                    self.report.messageKind = reportMessage
+                    self.log(logMessage)
                 }
             }
             await MainActor.run { [weak self] in
-                self?.currentTask = nil
+                guard let self else { return }
+                self.currentTask = nil
+                self.isRunning = false
             }
         }
     }
 
     func cancel() {
-        currentTask?.cancel()
-        currentTask = nil
+        guard let currentTask else { return }
+        currentTask.cancel()
         progress.phase = .cancelled
+        progress.status = .cancelled
         progress.statusLine = strings.cancelled
     }
 
     func clearTestFiles() {
-        guard let targetInfo, !isRunning else { return }
+        guard let targetInfo, canClearTestFiles else { return }
 
         let alert = NSAlert()
         alert.messageText = strings.deleteH2WTitle
@@ -163,24 +185,31 @@ final class TestController: ObservableObject {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        do {
-            let accessed = targetInfo.url.startAccessingSecurityScopedResource()
-            defer {
-                if accessed {
-                    targetInfo.url.stopAccessingSecurityScopedResource()
+        let targetURL = targetInfo.url
+        isClearingTestFiles = true
+        errorMessage = nil
+        log(.deletingH2WFiles)
+
+        Task.detached(priority: .userInitiated) { [weak self, targetURL] in
+            do {
+                let deletedCount = try Self.deleteTestFiles(in: targetURL)
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.log(.deletedFiles(deletedCount))
+                    self.refreshTarget()
+                    self.isClearingTestFiles = false
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    let message = self.strings.message(for: error)
+                    let logMessage = self.logMessage(for: error, fallbackMessage: message)
+                    self.errorMessage = message
+                    self.log(logMessage)
+                    self.refreshTarget()
+                    self.isClearingTestFiles = false
                 }
             }
-
-            let files = try H2WFileScanner.allH2WFiles(in: targetInfo.url)
-            for file in files {
-                try FileManager.default.removeItem(at: file.url)
-            }
-            log(strings.deletedFiles(files.count))
-            refreshTarget()
-        } catch {
-            let message = strings.message(for: error)
-            errorMessage = message
-            log(message)
         }
     }
 
@@ -192,12 +221,16 @@ final class TestController: ObservableObject {
     private func setTarget(_ url: URL) {
         do {
             targetInfo = try Self.volumeInfo(for: url)
-            progress.statusLine = strings.ready
+            if progress.phase == .idle {
+                progress.status = .ready
+                progress.statusLine = strings.ready
+            }
             errorMessage = nil
         } catch {
             let message = strings.message(for: error)
+            let logMessage = logMessage(for: error, fallbackMessage: message)
             errorMessage = message
-            log(message)
+            log(logMessage)
         }
     }
 
@@ -219,13 +252,43 @@ final class TestController: ObservableObject {
         }
     }
 
+    private func log(_ message: TestLogMessage) {
+        logEntries.insert(TestLogEntry(messageKind: message, strings: strings), at: 0)
+        if logEntries.count > 80 {
+            logEntries.removeLast(logEntries.count - 80)
+        }
+    }
+
     private func refreshLocalizedStaticText() {
         if progress.phase == .idle {
+            progress.status = targetInfo == nil ? .selectTarget : .ready
             progress.statusLine = targetInfo == nil ? strings.selectTargetStatus : strings.ready
         }
         if report.verdict == .notRun {
             report.message = strings.noTestHasRun
+            report.messageKind = .noTestHasRun
         }
+    }
+
+    private func progressStatus(for error: Error, fallbackMessage: String) -> TestProgressStatus {
+        guard let storageError = error as? StorageTestError else {
+            return .custom(fallbackMessage)
+        }
+        return .storageError(storageError)
+    }
+
+    private func reportMessage(for error: Error, fallbackMessage: String) -> TestReportMessage {
+        guard let storageError = error as? StorageTestError else {
+            return .custom(fallbackMessage)
+        }
+        return .storageError(storageError)
+    }
+
+    private func logMessage(for error: Error, fallbackMessage: String) -> TestLogMessage {
+        guard let storageError = error as? StorageTestError else {
+            return .custom(fallbackMessage)
+        }
+        return .storageError(storageError)
     }
 
     private func initialTotalBytes(for targetInfo: TargetVolumeInfo) -> UInt64 {
@@ -265,5 +328,20 @@ final class TestController: ObservableObject {
             h2wFileCount: h2wFiles.count,
             h2wBytes: h2wBytes
         )
+    }
+
+    nonisolated private static func deleteTestFiles(in url: URL) throws -> Int {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessed {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let files = try H2WFileScanner.allH2WFiles(in: url)
+        for file in files {
+            try FileManager.default.removeItem(at: file.url)
+        }
+        return files.count
     }
 }

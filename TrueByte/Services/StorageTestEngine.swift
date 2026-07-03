@@ -58,12 +58,12 @@ struct StorageTestEngine {
         let plan = makeFilePlan(totalBytes: requestedBytes, in: configuration.targetURL)
         guard !plan.isEmpty else { throw StorageTestError.invalidSize }
 
-        await eventHandler(.log(strings.writingTo(
+        await eventHandler(.log(.writingTo(
             size: ByteCountFormat.fileSize(requestedBytes),
             path: configuration.targetURL.path
         )))
         if request.reservedBytes > 0 {
-            await eventHandler(.log(strings.leavingFree(ByteCountFormat.fileSize(request.reservedBytes))))
+            await eventHandler(.log(.leavingFree(ByteCountFormat.fileSize(request.reservedBytes))))
         }
 
         var progress = TestProgress(
@@ -71,7 +71,8 @@ struct StorageTestEngine {
             totalFiles: plan.count,
             totalBytes: requestedBytes,
             startedAt: Date(),
-            statusLine: strings.writingTestFiles
+            statusLine: strings.writingTestFiles,
+            status: .writingTestFiles
         )
         let writeStart = Date()
         var progressEmitter = ProgressEmitter(eventHandler: eventHandler)
@@ -84,6 +85,7 @@ struct StorageTestEngine {
             progress.currentFileCompletedBytes = 0
             progress.isSyncing = false
             progress.statusLine = strings.writingFile(index: file.index, total: plan.count)
+            progress.status = .writingFile(index: file.index, total: plan.count)
             await progressEmitter.emit(progress, force: true)
 
             try await writeFile(
@@ -97,7 +99,7 @@ struct StorageTestEngine {
 
         let writeDuration = Date().timeIntervalSince(writeStart)
         let writtenBytes = progress.writtenBytes
-        await eventHandler(.log(strings.writePassFinished(duration: ByteCountFormat.duration(writeDuration))))
+        await eventHandler(.log(.writePassFinished(duration: ByteCountFormat.duration(writeDuration))))
 
         var verifyReport = try await verifyFiles(
             plan,
@@ -124,7 +126,7 @@ struct StorageTestEngine {
             return PlannedTestFile(url: file.url, index: file.index ?? offset + 1, size: file.size, startOffset: startOffset)
         }
 
-        await eventHandler(.log(strings.verifyingExisting(plan.count)))
+        await eventHandler(.log(.verifyingExisting(plan.count)))
         return try await verifyFiles(
             plan,
             strings: strings,
@@ -199,11 +201,13 @@ struct StorageTestEngine {
             let elapsed = max(Date().timeIntervalSince(startedAt), 0.001)
             progress.writeSpeedBytesPerSecond = Double(progress.writtenBytes) / elapsed
             progress.statusLine = strings.writingFileName(plannedFile.url.lastPathComponent)
+            progress.status = .writingFileName(plannedFile.url.lastPathComponent)
             await progressEmitter.emit(progress)
         }
 
         progress.isSyncing = true
         progress.statusLine = strings.flushingFileName(plannedFile.url.lastPathComponent)
+        progress.status = .flushingFileName(plannedFile.url.lastPathComponent)
         progress.lastActivityAt = Date()
         await progressEmitter.emit(progress, force: true)
         handle.synchronizeFile()
@@ -227,7 +231,8 @@ struct StorageTestEngine {
             totalBytes: totalBytes,
             writtenBytes: writtenBytes,
             startedAt: Date(),
-            statusLine: strings.verifyingTestFiles
+            statusLine: strings.verifyingTestFiles,
+            status: .verifyingTestFiles
         )
         var stats = VerificationStats()
         stats.testedBytes = totalBytes
@@ -242,6 +247,7 @@ struct StorageTestEngine {
             progress.currentFileCompletedBytes = 0
             progress.isSyncing = false
             progress.statusLine = strings.verifyingFile(index: file.index, total: files.count)
+            progress.status = .verifyingFile(index: file.index, total: files.count)
             await progressEmitter.emit(progress, force: true)
 
             try await verifyFile(
@@ -256,7 +262,9 @@ struct StorageTestEngine {
 
         let verifyDuration = Date().timeIntervalSince(verifyStart)
         let verdict: TestVerdict = stats.hasErrors ? .failed : .passed
-        let message = stats.hasErrors ? strings.defectiveMediaMessage : strings.successMessage
+        let messageKind: TestReportMessage = stats.hasErrors ? .defective : .success
+        let progressStatus: TestProgressStatus = stats.hasErrors ? .defective : .success
+        let message = messageKind.localized(strings: strings)
 
         let report = TestReport(
             verdict: verdict,
@@ -268,7 +276,8 @@ struct StorageTestEngine {
             writeSpeedBytesPerSecond: writeDuration > 0 ? Double(writtenBytes) / writeDuration : 0,
             readSpeedBytesPerSecond: verifyDuration > 0 ? Double(totalBytes) / verifyDuration : 0,
             generatedFileCount: files.count,
-            message: message
+            message: message,
+            messageKind: messageKind
         )
 
         await eventHandler(.progress(TestProgress(
@@ -279,7 +288,8 @@ struct StorageTestEngine {
             writeSpeedBytesPerSecond: report.writeSpeedBytesPerSecond,
             readSpeedBytesPerSecond: report.readSpeedBytesPerSecond,
             startedAt: progress.startedAt,
-            statusLine: message
+            statusLine: message,
+            status: progressStatus
         )))
         await eventHandler(.report(report))
         return report
@@ -321,6 +331,7 @@ struct StorageTestEngine {
             let elapsed = max(Date().timeIntervalSince(startedAt), 0.001)
             progress.readSpeedBytesPerSecond = Double(progress.verifiedBytes) / elapsed
             progress.statusLine = strings.verifyingFileName(plannedFile.url.lastPathComponent)
+            progress.status = .verifyingFileName(plannedFile.url.lastPathComponent)
             await progressEmitter.emit(progress)
         }
         await progressEmitter.emit(progress, force: true)

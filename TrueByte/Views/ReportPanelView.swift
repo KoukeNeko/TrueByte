@@ -6,83 +6,107 @@ struct ReportPanelView: View {
     var strings: AppStrings
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label(strings.title(for: report.verdict), systemImage: verdictIcon)
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(verdictColor)
-                    Spacer()
-                    Text(ByteCountFormat.fileSize(report.totalBytes))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            reportSummary
+                .padding(24)
 
-                Text(report.message)
-                    .font(.callout)
+            Divider()
+
+            logSection
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+                .padding(.bottom, 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var reportSummary: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                Label(strings.title(for: report.verdict), systemImage: verdictIcon)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(verdictColor)
+                Spacer()
+                Text(ByteCountFormat.fileSize(report.totalBytes))
                     .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+                    .monospacedDigit()
+            }
 
-                Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 10) {
-                    GridRow {
-                        ReportValue(title: strings.ok, value: ByteCountFormat.fileSize(report.stats.okBytes))
-                        ReportValue(title: strings.dataLost, value: ByteCountFormat.fileSize(report.stats.lostBytes))
-                        ReportValue(title: strings.aliased, value: ByteCountFormat.fileSize(report.stats.aliasedBytes))
-                    }
-                    GridRow {
-                        ReportValue(title: strings.overwritten, value: strings.sectors(report.stats.overwrittenSectors))
-                        ReportValue(
-                            title: strings.slightlyChanged,
-                            value: strings.sectors(report.stats.slightlyChangedSectors)
-                        )
-                        ReportValue(title: strings.corrupted, value: strings.sectors(report.stats.corruptedSectors))
-                    }
-                    GridRow {
-                        ReportValue(title: strings.writeTime, value: ByteCountFormat.duration(report.writeDuration))
-                        ReportValue(title: strings.verifyTime, value: ByteCountFormat.duration(report.verifyDuration))
-                        ReportValue(title: strings.files, value: "\(report.generatedFileCount)")
-                    }
+            Text(report.localizedMessage(strings: strings))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+
+            Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 10) {
+                GridRow {
+                    ReportValue(title: strings.ok, value: ByteCountFormat.fileSize(report.stats.okBytes))
+                    ReportValue(title: strings.dataLost, value: ByteCountFormat.fileSize(report.stats.lostBytes))
+                    ReportValue(title: strings.aliased, value: ByteCountFormat.fileSize(report.stats.aliasedBytes))
                 }
-
-                if let firstError = report.stats.firstError {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(strings.firstError)
-                            .font(.headline)
-                        Text("\(strings.offset) \(hex(firstError.offset))")
-                        Text("\(strings.expected) \(hex(firstError.expectedWord))")
-                        Text("\(strings.found) \(hex(firstError.foundWord))")
-                    }
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
+                GridRow {
+                    ReportValue(title: strings.overwritten, value: strings.sectors(report.stats.overwrittenSectors))
+                    ReportValue(
+                        title: strings.slightlyChanged,
+                        value: strings.sectors(report.stats.slightlyChangedSectors)
+                    )
+                    ReportValue(title: strings.corrupted, value: strings.sectors(report.stats.corruptedSectors))
                 }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(strings.log)
-                        .font(.headline)
-
-                    if logEntries.isEmpty {
-                        Text(strings.noLogEntries)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(logEntries) { entry in
-                            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Text(entry.date, style: .time)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 76, alignment: .leading)
-                                Text(entry.message)
-                                    .textSelection(.enabled)
-                            }
-                            .font(.callout)
-                        }
-                    }
+                GridRow {
+                    ReportValue(title: strings.writeTime, value: ByteCountFormat.duration(report.writeDuration))
+                    ReportValue(title: strings.verifyTime, value: ByteCountFormat.duration(report.verifyDuration))
+                    ReportValue(title: strings.files, value: "\(report.generatedFileCount)")
                 }
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let firstError = report.stats.firstError {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(strings.firstError)
+                        .font(.headline)
+                    Text("\(strings.offset) \(hex(firstError.offset))")
+                    Text("\(strings.expected) \(hex(firstError.expectedWord))")
+                    Text("\(strings.found) \(hex(firstError.foundWord))")
+                }
+                .font(.system(.callout, design: .monospaced))
+                .textSelection(.enabled)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var logSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(strings.log)
+                .font(.headline)
+
+            if logEntries.isEmpty {
+                Text(strings.noLogEntries)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(logEntries) { entry in
+                            logRow(entry)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .scrollIndicators(.visible)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func logRow(_ entry: TestLogEntry) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(entry.date, style: .time)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 76, alignment: .leading)
+            Text(entry.localizedMessage(strings: strings))
+                .textSelection(.enabled)
+        }
+        .font(.callout)
     }
 
     private var verdictIcon: String {

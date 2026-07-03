@@ -34,6 +34,59 @@ enum TestPhase: Equatable, Sendable {
     }
 }
 
+enum TestProgressStatus: Sendable {
+    case selectTarget
+    case ready
+    case mode(TestMode)
+    case writingTestFiles
+    case writingFile(index: Int, total: Int)
+    case writingFileName(String)
+    case flushingFileName(String)
+    case verifyingTestFiles
+    case verifyingFile(index: Int, total: Int)
+    case verifyingFileName(String)
+    case success
+    case defective
+    case cancelled
+    case storageError(StorageTestError)
+    case custom(String)
+
+    func localized(strings: AppStrings) -> String {
+        switch self {
+        case .selectTarget:
+            strings.selectTargetStatus
+        case .ready:
+            strings.ready
+        case .mode(let mode):
+            strings.title(for: mode)
+        case .writingTestFiles:
+            strings.writingTestFiles
+        case .writingFile(let index, let total):
+            strings.writingFile(index: index, total: total)
+        case .writingFileName(let name):
+            strings.writingFileName(name)
+        case .flushingFileName(let name):
+            strings.flushingFileName(name)
+        case .verifyingTestFiles:
+            strings.verifyingTestFiles
+        case .verifyingFile(let index, let total):
+            strings.verifyingFile(index: index, total: total)
+        case .verifyingFileName(let name):
+            strings.verifyingFileName(name)
+        case .success:
+            strings.successMessage
+        case .defective:
+            strings.defectiveMediaMessage
+        case .cancelled:
+            strings.cancelled
+        case .storageError(let error):
+            strings.storageError(error)
+        case .custom(let message):
+            message
+        }
+    }
+}
+
 struct TargetVolumeInfo: Sendable {
     var url: URL
     var displayName: String
@@ -68,6 +121,7 @@ struct TestProgress: Sendable {
     var lastActivityAt = Date()
     var isSyncing = false
     var statusLine: String = "Select a target"
+    var status: TestProgressStatus = .selectTarget
 
     var activeBytes: UInt64 {
         switch phase {
@@ -93,6 +147,10 @@ struct TestProgress: Sendable {
         case .verifying: readSpeedBytesPerSecond
         default: max(writeSpeedBytesPerSecond, readSpeedBytesPerSecond)
         }
+    }
+
+    func localizedStatusLine(strings: AppStrings) -> String {
+        status.localized(strings: strings)
     }
 }
 
@@ -137,6 +195,32 @@ struct FirstError: Sendable {
     var foundWord: UInt64
 }
 
+enum TestReportMessage: Sendable {
+    case noTestHasRun
+    case cancelled
+    case success
+    case defective
+    case storageError(StorageTestError)
+    case custom(String)
+
+    func localized(strings: AppStrings) -> String {
+        switch self {
+        case .noTestHasRun:
+            strings.noTestHasRun
+        case .cancelled:
+            strings.testCancelled
+        case .success:
+            strings.successMessage
+        case .defective:
+            strings.defectiveMediaMessage
+        case .storageError(let error):
+            strings.storageError(error)
+        case .custom(let message):
+            message
+        }
+    }
+}
+
 struct TestReport: Sendable {
     var verdict: TestVerdict = .notRun
     var targetPath: String = ""
@@ -148,21 +232,14 @@ struct TestReport: Sendable {
     var readSpeedBytesPerSecond: Double = 0
     var generatedFileCount: Int = 0
     var message: String = "No test has run yet."
+    var messageKind: TestReportMessage = .noTestHasRun
+
+    func localizedMessage(strings: AppStrings) -> String {
+        messageKind.localized(strings: strings)
+    }
 }
 
-struct TestLogEntry: Identifiable, Sendable {
-    var id = UUID()
-    var date = Date()
-    var message: String
-}
-
-enum StorageTestEvent: Sendable {
-    case progress(TestProgress)
-    case log(String)
-    case report(TestReport)
-}
-
-enum StorageTestError: LocalizedError {
+enum StorageTestError: LocalizedError, Sendable {
     case targetNotWritable
     case noTarget
     case noTestFiles
@@ -186,4 +263,66 @@ enum StorageTestError: LocalizedError {
             return "macOS did not grant access to the selected target."
         }
     }
+}
+
+enum TestLogMessage: Sendable {
+    case writingTo(size: String, path: String)
+    case leavingFree(String)
+    case writePassFinished(duration: String)
+    case verifyingExisting(Int)
+    case testCancelled
+    case deletingH2WFiles
+    case deletedFiles(Int)
+    case storageError(StorageTestError)
+    case custom(String)
+
+    func localized(strings: AppStrings) -> String {
+        switch self {
+        case .writingTo(let size, let path):
+            strings.writingTo(size: size, path: path)
+        case .leavingFree(let size):
+            strings.leavingFree(size)
+        case .writePassFinished(let duration):
+            strings.writePassFinished(duration: duration)
+        case .verifyingExisting(let count):
+            strings.verifyingExisting(count)
+        case .testCancelled:
+            strings.testCancelled
+        case .deletingH2WFiles:
+            strings.deletingH2WFiles
+        case .deletedFiles(let count):
+            strings.deletedFiles(count)
+        case .storageError(let error):
+            strings.storageError(error)
+        case .custom(let message):
+            message
+        }
+    }
+}
+
+struct TestLogEntry: Identifiable, Sendable {
+    var id = UUID()
+    var date = Date()
+    var message: String
+    var messageKind: TestLogMessage
+
+    init(message: String) {
+        self.message = message
+        self.messageKind = .custom(message)
+    }
+
+    init(messageKind: TestLogMessage, strings: AppStrings) {
+        self.message = messageKind.localized(strings: strings)
+        self.messageKind = messageKind
+    }
+
+    func localizedMessage(strings: AppStrings) -> String {
+        messageKind.localized(strings: strings)
+    }
+}
+
+enum StorageTestEvent: Sendable {
+    case progress(TestProgress)
+    case log(TestLogMessage)
+    case report(TestReport)
 }

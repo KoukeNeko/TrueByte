@@ -21,58 +21,57 @@ struct TargetPanelView: View {
                     Label(strings.target, systemImage: "externaldrive")
                         .font(.headline)
                     Spacer()
-                    if controller.targetInfo != nil {
-                        Button {
-                            controller.selectTarget()
-                        } label: {
-                            Label(strings.change, systemImage: "folder")
-                        }
-                        .help(strings.changeTarget)
-                    }
-                }
-
-                if let target = controller.targetInfo {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(target.displayName)
-                            .font(.title3.weight(.medium))
-                            .lineLimit(1)
-
-                        Text(target.url.path)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .textSelection(.enabled)
-
-                        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
-                            GridRow {
-                                Text(strings.available)
-                                    .foregroundStyle(.secondary)
-                                Text(ByteCountFormat.fileSize(target.availableBytes))
-                            }
-                            GridRow {
-                                Text(strings.total)
-                                    .foregroundStyle(.secondary)
-                                Text(ByteCountFormat.fileSize(target.totalBytes))
-                            }
-                            GridRow {
-                                Text(".h2w")
-                                    .foregroundStyle(.secondary)
-                                Text(strings.h2wFileSummary(
-                                    count: target.h2wFileCount,
-                                    size: ByteCountFormat.fileSize(target.h2wBytes)
-                                ))
-                            }
-                        }
-                        .font(.callout)
-                    }
-                } else {
                     Button {
                         controller.selectTarget()
                     } label: {
-                        Label(strings.selectTarget, systemImage: "externaldrive.badge.plus")
+                        Label(controller.targetInfo == nil ? strings.selectTarget : strings.change, systemImage: "folder")
                     }
-                    .controlSize(.large)
+                    .help(controller.targetInfo == nil ? strings.selectTarget : strings.changeTarget)
+                    .disabled(controller.isBusy)
                 }
+
+                Group {
+                    if let target = controller.targetInfo {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(target.displayName)
+                                .font(.title3.weight(.medium))
+                                .lineLimit(1)
+
+                            Text(target.url.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .textSelection(.enabled)
+
+                            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 8) {
+                                GridRow {
+                                    Text(strings.available)
+                                        .foregroundStyle(.secondary)
+                                    Text(ByteCountFormat.fileSize(target.availableBytes))
+                                }
+                                GridRow {
+                                    Text(strings.total)
+                                        .foregroundStyle(.secondary)
+                                    Text(ByteCountFormat.fileSize(target.totalBytes))
+                                }
+                                GridRow {
+                                    Text(".h2w")
+                                        .foregroundStyle(.secondary)
+                                    Text(strings.h2wFileSummary(
+                                        count: target.h2wFileCount,
+                                        size: ByteCountFormat.fileSize(target.h2wBytes)
+                                    ))
+                                }
+                            }
+                            .font(.callout)
+                        }
+                    } else {
+                        Color.clear
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(height: 138, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Divider()
@@ -87,10 +86,10 @@ struct TargetPanelView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .disabled(controller.isRunning)
+                .disabled(controller.isBusy)
 
                 Toggle(strings.useAllAvailableSpace, isOn: $controller.useAllAvailableSpace)
-                    .disabled(controller.isRunning || controller.mode == .verifyOnly)
+                    .disabled(controller.isBusy || controller.mode == .verifyOnly)
 
                 HStack {
                     Text(strings.size)
@@ -103,7 +102,7 @@ struct TargetPanelView: View {
                     Text("GiB")
                         .foregroundStyle(.secondary)
                 }
-                .disabled(controller.useAllAvailableSpace || controller.isRunning || controller.mode == .verifyOnly)
+                .disabled(controller.useAllAvailableSpace || controller.isBusy || controller.mode == .verifyOnly)
 
                 Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                     GridRow {
@@ -138,7 +137,7 @@ struct TargetPanelView: View {
                 } label: {
                     Label(strings.clearH2W, systemImage: "trash")
                 }
-                .disabled(controller.targetInfo?.h2wFileCount == 0 || controller.isRunning)
+                .disabled(!controller.canClearTestFiles)
 
                 Spacer()
 

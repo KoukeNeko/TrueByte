@@ -12,14 +12,6 @@ struct ContentView: View {
         language.strings
     }
 
-    private var languageSelection: Binding<AppLanguage> {
-        Binding {
-            language
-        } set: { newValue in
-            languageRawValue = newValue.rawValue
-        }
-    }
-
     var body: some View {
         HSplitView {
             TargetPanelView(controller: controller, strings: strings)
@@ -36,18 +28,27 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Picker(strings.languagePickerLabel, selection: languageSelection) {
-                    ForEach(AppLanguage.allCases) { language in
-                        Text(language.toolbarTitle)
-                            .tag(language)
-                            .help(language.displayName)
-                    }
+                Menu {
+                    ForEach(AppLanguage.allCases) { option in
+                        Button {
+                            languageRawValue = option.rawValue
+                        } label: {
+                            if option == language {
+                                Label(option.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(option.displayName)
+                            }
+                        }
                 }
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .frame(width: 156)
+                } label: {
+                    Image(systemName: "globe")
+                        .frame(width: 24)
+                }
+                .menuStyle(.button)
+                .controlSize(.regular)
                 .help(strings.languagePickerHelp)
                 .accessibilityLabel(strings.languagePickerLabel)
+                .accessibilityValue(language.displayName)
             }
         }
         .onAppear {

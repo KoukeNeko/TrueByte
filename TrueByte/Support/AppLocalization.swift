@@ -522,6 +522,14 @@ struct AppStrings: Sendable {
         }
     }
 
+    var deletingH2WFiles: String {
+        switch language {
+        case .zhHant: "正在刪除 .h2w 檔案"
+        case .en: "Deleting .h2w files"
+        case .ja: ".h2w ファイルを削除中"
+        }
+    }
+
     var cancel: String {
         switch language {
         case .zhHant: "取消"

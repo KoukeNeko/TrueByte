@@ -16,7 +16,7 @@ struct ProgressPanelView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(strings.title(for: controller.progress.phase))
                         .font(.title.weight(.semibold))
-                    Text(controller.progress.statusLine)
+                    Text(controller.progress.localizedStatusLine(strings: strings))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
